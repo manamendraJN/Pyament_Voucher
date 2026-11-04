@@ -1,0 +1,57 @@
+name: Backup Neon to Supabase
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup-and-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEON_DIRECT_DATABASE_URL: ${{ secrets.NEON_DIRECT_DATABASE_URL }}
+      SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Validate secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$NEON_DIRECT_DATABASE_URL"
+          test -n "$SUPABASE_DATABASE_URL"
+
+      - name: Dump public schema from Neon
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pg_dump "$NEON_DIRECT_DATABASE_URL" \
+            --format=custom \
+            --schema=public \
+            --no-owner \
+            --no-privileges \
+            --file=neon-public.dump
+
+      - name: Restore public schema into Supabase
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pg_restore "$SUPABASE_DATABASE_URL" \
+            --clean \
+            --if-exists \
+            --exit-on-error \
+            --schema=public \
+            --no-owner \
+            --no-privileges \
+            neon-public.dump
+
+      - name: Remove dump
+        if: always()
+        run: rm -f neon-public.dump
